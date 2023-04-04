@@ -1,0 +1,145 @@
+
+fn main() {
+    let s =  "$8\r\n23-value\r\n$9\r\n大帅比\r\n:1\r\n".as_bytes();
+    let mut p = Parser::new(s, true);
+    println!("{:?}", p.parse());
+}
+
+#[derive(Debug)]
+struct Parser<'a> {
+    payload: &'a [u8],
+    lines: Vec<u8>,
+    is_resp: bool,
+    is_parse_error: bool,
+    is_mu: bool,
+    is_resp_error: bool,
+}
+
+const MIN_LEN: usize = 2;
+
+impl<'a> Parser<'a> {
+    pub fn new(payload: &'a [u8], is_resp: bool) -> Self {
+        Self {
+            payload,
+            lines: vec![],
+            is_resp,
+            is_parse_error: false,
+            is_mu: false,
+            is_resp_error: false,
+        }
+    }
+
+    pub fn parse(&'a mut self) -> &Self {
+        self.read(0);
+        if self.payload.len() < 1 {
+            self.is_parse_error = true;
+        }
+        return self;
+    }
+
+    fn read(&mut self, offset: usize) {
+        if self.payload.len() < MIN_LEN {
+            return;
+        }
+        if let Some(offset) = match self.payload[offset] {
+            b'*' => self.read_star(offset),
+            b'$' => self.read_dollar(offset),
+            b'+' | b'-' | b':' => self.read_str(offset),
+            _ => None,
+        } {
+            if offset < self.payload.len() {
+                self.read(offset);
+            }
+            return;
+        }
+        self.is_parse_error = true;
+    }
+
+    fn read_star(&mut self, offset: usize) -> Option<usize> {
+        self.add_line();
+        match self.read_len(offset + 1) {
+            Some((len, offset)) => {
+                let mut offset = offset;
+                for _i in 0..len {
+                    if let Some(o) = self.read_dollar(offset) {
+                        offset = o;
+                    } else {
+                        return None;
+                    }
+                }
+                return Some(offset);
+            }
+            _ => None,
+        }
+    }
+
+    fn read_dollar(&mut self, offset: usize) -> Option<usize> {
+        match self.read_len(offset + 1) {
+            Some((len, offset)) => {
+                self.push(&self.payload[offset..offset + len]);
+                return Some(offset + len + 2);
+            }
+            _ => None,
+        }
+    }
+
+    fn read_str(&mut self, offset: usize) -> Option<usize> {
+        self.add_line();
+        if self.payload[0] == b'-' {
+            self.is_resp_error = true
+        }
+        if let Some(end) = self.read_line_end(offset) {
+            self.push(&self.payload[offset..end]);
+            return Some(end + 2);
+        }
+        None
+    }
+
+    fn add_line(&mut self) {
+        if self.lines.len() > 0 {
+            self.lines.push(b'\n');
+            self.is_mu = true;
+        }
+    }
+
+    fn push(&mut self, payload: &[u8]) {
+        if self.lines.len() > 0 {
+            self.lines.push(b' ');
+        }
+        self.lines.extend_from_slice(if payload.len() < 32 {
+            payload
+        } else {
+            &payload[0..32]
+        });
+    }
+
+    fn read_len(&self, offset: usize) -> Option<(usize, usize)> {
+        if let Some(idx) = self.read_line_end(offset) {
+            if idx <= offset {
+                return None;
+            }
+            return match std::str::from_utf8(&self.payload[offset..idx])
+                .unwrap()
+                .parse()
+            {
+                Ok(len) => Some((len, idx + 2)),
+                Err(_) => None,
+            };
+        }
+        return None;
+    }
+
+    fn read_line_end(&self, offset: usize) -> Option<usize> {
+        let payload = self.payload;
+        for i in offset..payload.len() - 1 {
+            if payload[i] == b'\r' && payload[i + 1] == b'\n' {
+                return Some(i);
+            }
+        }
+        return None;
+    }
+}
+/**
+ * "*2\r\n$1\r\n0\r\n*120\r\n$3\r\n708\r\n$9\r\n708-value\r\n$4\r\n708|\r\n$5\r\n708||\r\n$1\r\n1\r\n$7\r\n1-value\r\n$2\r\n1|\r\n$3\r\n1||\r\n$3\r\n709\r\n$9\r\n709-value\r\n$4\r\n709|\r\n$5\r\n709||\r\n$1\r\n2\r\n$7\r\n2-value\r\n$2\r\n2|\r\n$3\r\n2||\r\n$3\r\n710\r\n$9\r\n710-value\r\n$4\r\n710|\r\n$5\r\n710||\r\n$1\r\n3\r\n$7\r\n3-value\r\n$2\r\n3|\r\n$3\r\n3||\r\n$3\r\n711\r\n$9\r\n711-value\r\n$4\r\n711|\r\n$5\r\n711||\r\n$1\r\n4\r\n$7\r\n4-value\r\n$2\r\n4|\r\n$3\r\n4||\r\n$3\r\n712\r\n$9\r\n712-value\r\n$4\r\n712|\r\n$5\r\n712||\r\n$1\r\n5\r\n$7\r\n5-value\r\n$2\r\n5|\r\n$3\r\n5||\r\n$3\r\n713\r\n$9\r\n713-value\r\n$4\r\n713|\r\n$5\r\n713||\r\n$1\r\n6\r\n$7\r\n6-value\r\n$2\r\n6|\r\n$3\r\n6||\r\n$3\r\n714\r\n$9\r\n714-value\r\n$4\r\n714|\r\n$5\r\n714||\r\n$1\r\n7\r\n$7\r\n7-value\r\n$2\r\n7|\r\n$3\r\n7||\r\n$3\r\n715\r\n$9\r\n715-value\r\n$4\r\n715|\r\n$5\r\n715||\r\n$1\r\n8\r\n$7\r\n8-value\r\n$2\r\n8|\r\n$3\r\n8||\r\n$3\r\n716\r\n$9\r\n716-value\r\n$4\r\n716|\r\n$5\r\n716||\r\n$1\r\n9\r\n$7\r\n9-value\r\n$2\r\n9|\r\n$3\r\n9||\r\n$3\r\n717\r\n$9\r\n717-value\r\n$4\r\n717|\r\n$5\r\n717||\r\n$2\r\n10\r\n$8\r\n10-value\r\n$3\r\n10|\r\n$4\r\n10||\r\n$3\r\n718\r\n$9\r\n718-value\r\n$4\r\n718|\r\n$5\r\n718||\r\n$2\r\n11\r\n$8\r\n11-value\r\n$3\r\n11|\r\n$4\r\n11||\r\n$3\r\n719\r\n$9\r\n719-value\r\n$4\r\n719|\r\n$5\r\n719||\r\n$2\r\n12\r\n$8\r\n12-value\r\n$3\r\n12|\r\n$4\r\n12||\r\n$3\r\n720\r\n$9"
+ * "*6\r\n$4\r\nhset\r\n$8\r\nlcj-test\r\n$2\r\n15\r\n$8\r\n15-value\r\n$3\r\n15|\r\n$4\r\n15||\r\n*5\r\n$3\r\nset\r\n$3\r\nlcj\r\n$9\r\n大帅比\r\n$2\r\nex\r\n$2\r\n60\r\n*2\r\n$6\r\nexists\r\n$8\r\nlcj-test\r\n*2\r\n$4\r\nhlen\r\n$8\r\nlcj-test\r\n"
+ */

@@ -13,7 +13,7 @@
 
 
 .DS_Store
-
+*.tmp
 
 # IDEA
 .idea/

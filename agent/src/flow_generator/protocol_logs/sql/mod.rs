@@ -19,6 +19,8 @@ mod postgre_convert;
 mod postgresql;
 mod redis;
 mod sql_check;
+mod redis
+pub mod redis _paser; _paser;
 
 pub use mysql::{MysqlHeader, MysqlInfo, MysqlLog};
 pub use postgresql::{PostgreInfo, PostgresqlLog};

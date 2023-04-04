@@ -1,5 +1,11 @@
 [source.crates-io]
 registry = "git://github.com/rust-lang/crates.io-index.git"
+replace-with = 'rsproxy'
+
+[source.rsproxy]
+registry = "https://rsproxy.cn/crates.io-index"
+[registries.rsproxy]
+index = "https://rsproxy.cn/crates.io-index"
 
 [net]
 git-fetch-with-cli = true
