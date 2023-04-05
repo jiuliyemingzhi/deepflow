@@ -375,6 +375,8 @@ pub struct ParseParam<'a> {
     pub parse_config: Option<&'a LogParserConfig>,
 
     pub l7_perf_cache: Rc<RefCell<L7PerfCache>>,
+
+    pub original_payload_len: RefCell<u32>,
 }
 
 // from packet, previous_log_info_cache, perf_only
@@ -399,6 +401,7 @@ impl From<(&MetaPacket<'_>, Rc<RefCell<L7PerfCache>>, bool)> for ParseParam<'_> 
             parse_config: None,
 
             l7_perf_cache: cache,
+            original_payload_len: RefCell::new(0),
         };
         if packet.ebpf_type != EbpfType::None {
             let is_tls = match packet.ebpf_type {

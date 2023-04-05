@@ -204,7 +204,7 @@ impl FlowLog {
 
         if let Some(payload) = packet.get_l4_payload() {
             let parser = self.l7_protocol_log_parser.as_mut().unwrap();
-
+            parse_param.original_payload_len.replace(payload.len() as u32);
             let ret = parser.parse_payload(
                 {
                     let pkt_size = flow_config.l7_log_packet_size as usize;
