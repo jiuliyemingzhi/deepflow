@@ -34,7 +34,7 @@ use crate::{
 };
 
 use super::super::{
-    value_is_default, value_is_negative, AppProtoHead, L7ResponseStatus, LogMessageType,
+    value_is_default, AppProtoHead, L7ResponseStatus, LogMessageType,
 };
 
 const SEPARATOR_SIZE: usize = 2;
@@ -78,10 +78,10 @@ pub struct RedisInfo {
     #[serde(rename = "response_status")]
     pub resp_status: L7ResponseStatus,
 
-    #[serde(rename = "response_length", skip_serializing_if = "value_is_negative")]
+    #[serde(rename = "response_length")]
     pub resp_msg_size: Option<u32>,
 
-    #[serde(rename = "request_length", skip_serializing_if = "value_is_negative")]
+    #[serde(rename = "request_length")]
     pub req_msg_size: Option<u32>,
 
     rrt: u64,
