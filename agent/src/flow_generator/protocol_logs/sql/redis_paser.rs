@@ -1,9 +1,4 @@
-use crate::{
-    common::{
-        enums::IpProtocol,
-        l7_protocol_log::ParseParam,
-    },
-};
+use crate::common::{enums::IpProtocol, l7_protocol_log::ParseParam};
 
 const MIN_LEN: usize = 2;
 const PARSE_ERR: u8 = 1;
@@ -31,7 +26,9 @@ impl RedisParser {
         self.status |= RESP_MUL;
     }
 
-    pub fn is_resp_err(&self) -> bool { self.status & RESP_ERR > 0 }
+    pub fn is_resp_err(&self) -> bool {
+        self.status & RESP_ERR > 0
+    }
     pub fn is_parse_err(&self) -> bool {
         self.status & PARSE_ERR > 0
     }
@@ -87,6 +84,16 @@ impl RedisParser {
         self.set_parse_err();
     }
 
+    pub fn get_req_type(&self) -> &[u8] {
+        if self.is_resp_mul(){
+            return b"pipeline";
+        }
+        &self.lines[..self.lines
+            .iter()
+            .position(|&x| x == b' ')
+            .unwrap_or(self.lines.len())]
+    }
+
     fn read_star(&mut self, payload: &[u8], offset: usize) -> Option<usize> {
         self.add_line();
         match Self::read_len(payload, offset + 1) {
@@ -123,7 +130,9 @@ impl RedisParser {
         self.add_line();
         if let Some(end) = Self::read_line_end(payload, offset) {
             let sub_payload = &payload[offset..end];
-            if payload[0] == b'-' { self.push_err(sub_payload); }
+            if payload[0] == b'-' {
+                self.push_err(sub_payload);
+            }
             self.push(sub_payload);
             return Some(end + 2);
         }
@@ -153,18 +162,16 @@ impl RedisParser {
         if self.err_lines.len() > 0 {
             self.err_lines.push(b'\n');
         }
-        self.err_lines.extend_from_slice(match payload.len() < MAX_LEN {
-            true => payload,
-            _ => &payload[0..MAX_LEN],
-        });
+        self.err_lines
+            .extend_from_slice(match payload.len() < MAX_LEN {
+                true => payload,
+                _ => &payload[0..MAX_LEN],
+            });
     }
 
     pub fn read_len(payload: &[u8], offset: usize) -> Option<(usize, usize)> {
         if let Some(idx) = Self::read_line_end(payload, offset) {
-            return match std::str::from_utf8(&payload[..idx])
-                .unwrap()
-                .parse()
-            {
+            return match std::str::from_utf8(&payload[offset..idx]).unwrap().parse() {
                 Ok(len) => Some((len, idx + 2)),
                 Err(_) => None,
             };

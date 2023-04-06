@@ -18,11 +18,12 @@ use std::{fmt, str};
 
 use serde::{Serialize, Serializer};
 
+use crate::flow_generator::protocol_logs::sql::redis_paser::RedisParser;
 use crate::{
     common::{
         enums::IpProtocol,
-        flow::{L7PerfStats, PacketDirection},
         flow::L7Protocol,
+        flow::{L7PerfStats, PacketDirection},
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         l7_protocol_log::{L7ProtocolParserInterface, ParseParam},
     },
@@ -31,9 +32,10 @@ use crate::{
         protocol_logs::pb_adapter::{L7ProtocolSendLog, L7Request, L7Response},
     },
 };
-use crate::flow_generator::protocol_logs::sql::redis_paser::RedisParser;
 
-use super::super::{AppProtoHead, L7ResponseStatus, LogMessageType, value_is_default, value_is_negative};
+use super::super::{
+    value_is_default, value_is_negative, AppProtoHead, L7ResponseStatus, LogMessageType,
+};
 
 const SEPARATOR_SIZE: usize = 2;
 
@@ -44,22 +46,22 @@ pub struct RedisInfo {
     is_tls: bool,
 
     #[serde(
-    rename = "request_resource",
-    skip_serializing_if = "value_is_default",
-    serialize_with = "vec_u8_to_string"
+        rename = "request_resource",
+        skip_serializing_if = "value_is_default",
+        serialize_with = "vec_u8_to_string"
     )]
     pub request: Vec<u8>,
     // 命令字段包括参数例如："set key value"
     #[serde(
-    skip_serializing_if = "value_is_default",
-    serialize_with = "vec_u8_to_string"
+        skip_serializing_if = "value_is_default",
+        serialize_with = "vec_u8_to_string"
     )]
     pub request_type: Vec<u8>,
     // 命令类型不包括参数例如：命令为"set key value"，命令类型为："set"
     #[serde(
-    rename = "response_result",
-    skip_serializing_if = "value_is_default",
-    serialize_with = "vec_u8_to_string"
+        rename = "response_result",
+        skip_serializing_if = "value_is_default",
+        serialize_with = "vec_u8_to_string"
     )]
     pub response: Vec<u8>,
     // 整数回复 + 批量回复 + 多条批量回复
@@ -67,9 +69,9 @@ pub struct RedisInfo {
     pub status: Vec<u8>,
     // '+'
     #[serde(
-    rename = "response_expection",
-    skip_serializing_if = "value_is_default",
-    serialize_with = "vec_u8_to_string"
+        rename = "response_expection",
+        skip_serializing_if = "value_is_default",
+        serialize_with = "vec_u8_to_string"
     )]
     pub error: Vec<u8>,
     // '-'
@@ -111,8 +113,8 @@ impl L7ProtocolInfoInterface for RedisInfo {
 }
 
 pub fn vec_u8_to_string<S>(v: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+where
+    S: Serializer,
 {
     serializer.serialize_str(&String::from_utf8_lossy(v))
 }
@@ -186,13 +188,16 @@ pub struct RedisLog {
 
 impl L7ProtocolParserInterface for RedisLog {
     fn check_payload(&mut self, payload: &[u8], param: &ParseParam) -> bool {
-        RedisParser::check(payload, param)
+        println!("11111 {:?}", std::str::from_utf8(payload).unwrap_or(""));
+        let a  = RedisParser::check(payload, param);
+        println!("eee {:?}", a);
+        a
     }
 
     fn parse_payload(&mut self, payload: &[u8], param: &ParseParam) -> Result<Vec<L7ProtocolInfo>> {
         self.info.is_tls = param.is_tls();
         self.perf_stats.get_or_insert(L7PerfStats::default());
-        self.parse(payload, param);
+        self.parse(payload, param)?;
         self.info.cal_rrt(param).map(|rrt| {
             self.info.rrt = rrt;
             self.perf_stats.as_mut().unwrap().update_rrt(rrt);
@@ -222,9 +227,9 @@ impl RedisLog {
         *self = RedisLog::default();
     }
 
-    fn fill_request(&mut self, context: &[u8], original_payload_len: u32) {
+    fn fill_request(&mut self, context: &[u8], original_payload_len: u32, request_type: &[u8]) {
         self.info.req_msg_size = Some(original_payload_len);
-        self.info.request_type = context[..context.iter().position(|&x| x == b' ').unwrap_or(context.len())].to_vec();
+        self.info.request_type = request_type.to_vec();
         self.info.msg_type = LogMessageType::Request;
         self.info.request = context.to_vec();
         self.perf_stats.as_mut().unwrap().inc_req();
@@ -250,22 +255,27 @@ impl RedisLog {
         }
     }
 
-    fn parse(
-        &mut self,
-        payload: &[u8],
-        param: &ParseParam,
-    ) -> Result<()> {
+    fn parse(&mut self, payload: &[u8], param: &ParseParam) -> Result<()> {
         if param.l4_protocol != IpProtocol::Tcp {
             return Err(Error::InvalidIpProtocol);
         }
+        println!("222 {:?}", std::str::from_utf8(payload).unwrap_or(""));
         let mut redis_parser = RedisParser::default();
         redis_parser.parse(payload);
         if redis_parser.is_data_err(param.original_payload_len.take(), payload) {
             return Err(Error::RedisLogParseFailed);
         }
         match param.direction {
-            PacketDirection::ClientToServer => self.fill_request(redis_parser.get_content(), param.original_payload_len.take()),
-            PacketDirection::ServerToClient => self.fill_response(redis_parser.get_content(), param.original_payload_len.take(), redis_parser.get_err()),
+            PacketDirection::ClientToServer => self.fill_request(
+                redis_parser.get_content(),
+                param.original_payload_len.take(),
+                redis_parser.get_req_type(),
+            ),
+            PacketDirection::ServerToClient => self.fill_response(
+                redis_parser.get_content(),
+                param.original_payload_len.take(),
+                redis_parser.get_err(),
+            ),
         };
         Ok(())
     }
@@ -424,9 +434,9 @@ pub fn decode_error_code(context: &[u8]) -> Option<&[u8]> {
 // test log parse
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, fs};
     use std::path::Path;
     use std::rc::Rc;
+    use std::{cell::RefCell, fs};
 
     use crate::{
         common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
